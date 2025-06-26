@@ -41,7 +41,15 @@
     const leaveTimers = new Map();
     let leaveTimeoutsEnd = {};
 
-    const namePool = [ /* Namen gekürzt, kannst du wieder einfügen */ "Anna", "Ben", "Clara", "David", "Elena", "Felix" ];
+    const namePool = [
+      "Anna","Ben","Clara","David","Elena","Felix","Greta","Hassan","Isa","Jonas","Kira","Luca","Mila","Noah","Olivia",
+      "Paul","Quinn","Rosa","Simon","Tina","Uwe","Vera","Willi","Xenia","Yara","Zoe","Liam","Emma","Leo","Lina","Max",
+      "Nina","Oskar","Paula","Robin","Sophie","Tom","Una","Valentin","Walter","Xaver","Yusuf","Zara","Anni","Boris",
+      "Carlos","Dana","Emil","Frieda","Gustav","Heidi","Ibrahim","Jule","Kevin","Laura","Martin","Nora","Otto","Pia",
+      "Rudi","Sina","Tarek","Ulla","Vito","Wanda","Ximena","Yannik","Zelda","Alex","Bianca","Chris","Debbie","Erik",
+      "Frank","Gina","Henry","Ilay","Jack","Katja","Loris","Mats","Nelli","Ole","Phil","Ron","Selin","Tim","Umut",
+      "Vivi","Wolf","Xela","Yuna","Zeno"
+    ];
 
     function generateCode() {
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -172,6 +180,17 @@
       }
     }
 
+    function kickUser(name) {
+      if (!joinedUsers.has(name)) return;
+      joinedUsers.delete(name);
+      clearTimeout(leaveTimers.get(name));
+      leaveTimers.delete(name);
+      delete leaveTimeoutsEnd[name];
+      log(`[KICK] ${name} wurde vom Server gekickt.`);
+      updateOnlineDisplay();
+      saveToStorage();
+    }
+
     function log(msg) {
       const line = document.createElement('div');
       line.textContent = msg;
@@ -235,9 +254,22 @@
       document.getElementById('onlineCount').textContent = `Online: ${count}/100 – Nutzer anzeigen`;
       const list = document.getElementById('onlineList');
       list.innerHTML = '';
+
       Array.from(joinedUsers).sort().forEach(name => {
         const entry = document.createElement('div');
-        entry.textContent = `• ${name}`;
+        entry.className = "flex justify-between items-center mb-1";
+
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = `• ${name}`;
+
+        const kickBtn = document.createElement('button');
+        kickBtn.innerHTML = '🦶';
+        kickBtn.title = `Kicke ${name}`;
+        kickBtn.className = "ml-2 text-red-400 hover:text-red-200 text-sm";
+        kickBtn.onclick = () => kickUser(name);
+
+        entry.appendChild(nameSpan);
+        entry.appendChild(kickBtn);
         list.appendChild(entry);
       });
     }
