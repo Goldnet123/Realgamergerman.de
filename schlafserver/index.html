@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Schlafserver Host</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-6">
+  <h1 class="text-3xl font-bold mb-6">🛌 Schlafserver Host</h1>
+
+  <button onclick="createServer()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mb-4">
+    Neuen Schlafserver erstellen
+  </button>
+
+  <div id="codeBox" class="text-xl font-mono mt-2 hidden flex flex-col items-center">
+    <span id="codeText" class="mb-2"></span>
+    <button onclick="copyCode()" class="mb-4 text-sm bg-gray-700 px-2 py-1 rounded hover:bg-gray-600">Code kopieren</button>
+    <div class="flex gap-4 items-center">
+      <button onclick="startServer()" id="startBtn" class="hidden text-green-500 text-3xl" title="Start">▶️</button>
+      <button onclick="stopServer()" id="stopBtn" class="hidden text-red-500 text-3xl" title="Stop">🛑</button>
+      <button onclick="deleteServer()" class="text-gray-400 hover:text-white text-2xl ml-2" title="Server löschen">🗑️</button>
+    </div>
+  </div>
+
+  <div class="mt-4 text-sm hidden" id="onlineBox">
+    <span id="onlineCount" class="underline cursor-pointer" onclick="toggleOnlineList()">
+      Online: 0/100 – Nutzer anzeigen
+    </span>
+    <div id="onlineList" class="mt-2 hidden bg-gray-800 p-2 rounded max-h-32 overflow-y-auto text-xs"></div>
+  </div>
+
+  <div id="logBox" class="mt-6 bg-black p-4 rounded w-full max-w-2xl h-64 overflow-y-auto font-mono text-sm hidden">
+    <div id="logOutput"></div>
+  </div>
+
+  <script>
+    let personInterval;
+    let serverRunning = false;
+    const joinedUsers = new Set();
+    const leaveTimers = new Map();
+    let leaveTimeoutsEnd = {};
+
+    const namePool = [ /* Namen gekürzt, kannst du wieder einfügen */ "Anna", "Ben", "Clara", "David", "Elena", "Felix" ];
+
+    function generateCode() {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+      let code = '';
+      for (let i = 0; i < 16; i++) {
+        if (i > 0 && i % 4 === 0) code += '-';
+        code += chars[Math.floor(Math.random() * chars.length)];
+      }
+      return code;
+    }
+
+    function saveToStorage() {
+      localStorage.setItem("schlafserver_active", JSON.stringify(serverRunning));
+      localStorage.setItem("schlafserver_code", document.getElementById('codeText').textContent);
+      localStorage.setItem("schlafserver_users", JSON.stringify(Array.from(joinedUsers)));
+      const leaveData = {};
+      leaveTimers.forEach((timeout, name) => {
+        const remaining = leaveTimeoutsEnd[name] - Date.now();
+        leaveData[name] = Date.now() + remaining;
+      });
+      localStorage.setItem("schlafserver_leaveTimes", JSON.stringify(leaveData));
+    }
+
+    function restoreFromStorage() {
+      const isActive = JSON.parse(localStorage.getItem("schlafserver_active"));
+      const code = localStorage.getItem("schlafserver_code");
+      const users = JSON.parse(localStorage.getItem("schlafserver_users") || "[]");
+      const leaveData = JSON.parse(localStorage.getItem("schlafserver_leaveTimes") || "{}");
+
+      if (!code) return;
+
+      document.getElementById('codeText').textContent = code;
+      document.getElementById('codeBox').classList.remove('hidden');
+      document.getElementById('onlineBox').classList.remove('hidden');
+      updateOnlineDisplay();
+
+      users.forEach(user => {
+        joinedUsers.add(user);
+        const time = leaveData[user];
+        if (time && time > Date.now()) {
+          scheduleLeaveForUser(user, time - Date.now());
+        }
+      });
+
+      updateOnlineDisplay();
+
+      if (isActive) {
+        document.getElementById('startBtn').classList.add('hidden');
+        document.getElementById('stopBtn').classList.remove('hidden');
+        document.getElementById('logBox').classList.remove('hidden');
+        serverRunning = true;
+        log("[INFO] Schlafserver wurde automatisch wiederhergestellt.");
+        scheduleJoinLeave();
+      }
+    }
+
+    function createServer() {
+      document.getElementById('codeText').textContent = generateCode();
+      document.getElementById('codeBox').classList.remove('hidden');
+      document.getElementById('logBox').classList.add('hidden');
+      document.getElementById('logOutput').innerHTML = '';
+      document.getElementById('startBtn').classList.remove('hidden');
+      document.getElementById('stopBtn').classList.add('hidden');
+      document.getElementById('onlineBox').classList.add('hidden');
+      document.getElementById('onlineList').classList.add('hidden');
+      stopServer();
+    }
+
+    function copyCode() {
+      const code = document.getElementById('codeText').textContent;
+      navigator.clipboard.writeText(code).then(() => alert("Code kopiert: " + code));
+    }
+
+    function startServer() {
+      if (serverRunning) return;
+      serverRunning = true;
+      saveToStorage();
+
+      document.getElementById('logOutput').innerHTML = '';
+      document.getElementById('logBox').classList.remove('hidden');
+      document.getElementById('startBtn').classList.add('hidden');
+      document.getElementById('stopBtn').classList.remove('hidden');
+      document.getElementById('onlineBox').classList.remove('hidden');
+
+      const startupLogs = [
+        "[INFO] Initialisiere Schlafserver...",
+        "[INFO] Lade Traum-Assets...",
+        "[INFO] Verbinde zum REM-Cluster...",
+        "[INFO] Melatonin-Level stabil.",
+        "[INFO] Server läuft im Leise-Modus.",
+        "[INFO] Nutzerstatus: EINSCHLAFEN...",
+        "[SUCCESS] Schlafserver erfolgreich gestartet.",
+        "[INFO] Gute Nacht ✨"
+      ];
+
+      let i = 0;
+      const interval = setInterval(() => {
+        if (!serverRunning || i >= startupLogs.length) {
+          clearInterval(interval);
+          scheduleJoinLeave();
+          return;
+        }
+        log(startupLogs[i++]);
+      }, 500);
+    }
+
+    function stopServer() {
+      serverRunning = false;
+      clearTimeout(personInterval);
+      leaveTimers.forEach(timeout => clearTimeout(timeout));
+      leaveTimers.clear();
+      joinedUsers.clear();
+      updateOnlineDisplay();
+      document.getElementById('startBtn').classList.remove('hidden');
+      document.getElementById('stopBtn').classList.add('hidden');
+      document.getElementById('onlineBox').classList.add('hidden');
+      log("[WARN] Schlafserver wurde gestoppt.");
+      saveToStorage();
+    }
+
+    function deleteServer() {
+      if (confirm("Möchtest du den Server wirklich löschen? Alle Daten gehen verloren.")) {
+        localStorage.removeItem("schlafserver_active");
+        localStorage.removeItem("schlafserver_code");
+        localStorage.removeItem("schlafserver_users");
+        localStorage.removeItem("schlafserver_leaveTimes");
+        location.reload();
+      }
+    }
+
+    function log(msg) {
+      const line = document.createElement('div');
+      line.textContent = msg;
+      document.getElementById('logOutput').appendChild(line);
+      document.getElementById('logBox').scrollTop = document.getElementById('logBox').scrollHeight;
+    }
+
+    function scheduleJoinLeave() {
+      if (!serverRunning) return;
+      const delay = Math.random() * (10000 - 1000) + 1000;
+      personInterval = setTimeout(() => {
+        const joinedArray = Array.from(joinedUsers);
+        const notJoined = namePool.filter(n => !joinedUsers.has(n));
+        const maxOnline = 99;
+
+        let action;
+        if (notJoined.length > 0 && (joinedArray.length === 0 || Math.random() < 0.6) && joinedUsers.size < maxOnline) {
+          action = 'join';
+        } else if (joinedArray.length > 0) {
+          action = 'leave';
+        }
+
+        if (action === 'join') {
+          const person = notJoined[Math.floor(Math.random() * notJoined.length)];
+          joinedUsers.add(person);
+          log(`[INFO] ${person} hat den Schlafserver betreten.`);
+          const leaveIn = Math.random() * (10800000 - 1000) + 1000;
+          scheduleLeaveForUser(person, leaveIn);
+        } else if (action === 'leave') {
+          const person = joinedArray[Math.floor(Math.random() * joinedArray.length)];
+          joinedUsers.delete(person);
+          clearTimeout(leaveTimers.get(person));
+          leaveTimers.delete(person);
+          delete leaveTimeoutsEnd[person];
+          log(`[INFO] ${person} hat den Schlafserver verlassen.`);
+        }
+
+        updateOnlineDisplay();
+        saveToStorage();
+        scheduleJoinLeave();
+      }, delay);
+    }
+
+    function scheduleLeaveForUser(name, ms) {
+      leaveTimeoutsEnd[name] = Date.now() + ms;
+      const timeout = setTimeout(() => {
+        if (joinedUsers.has(name)) {
+          joinedUsers.delete(name);
+          leaveTimers.delete(name);
+          delete leaveTimeoutsEnd[name];
+          log(`[INFO] ${name} hat den Schlafserver automatisch verlassen.`);
+          updateOnlineDisplay();
+          saveToStorage();
+        }
+      }, ms);
+      leaveTimers.set(name, timeout);
+    }
+
+    function updateOnlineDisplay() {
+      const count = joinedUsers.size;
+      document.getElementById('onlineCount').textContent = `Online: ${count}/100 – Nutzer anzeigen`;
+      const list = document.getElementById('onlineList');
+      list.innerHTML = '';
+      Array.from(joinedUsers).sort().forEach(name => {
+        const entry = document.createElement('div');
+        entry.textContent = `• ${name}`;
+        list.appendChild(entry);
+      });
+    }
+
+    function toggleOnlineList() {
+      document.getElementById('onlineList').classList.toggle('hidden');
+    }
+
+    window.addEventListener('load', restoreFromStorage);
+  </script>
+</body>
+</html>
